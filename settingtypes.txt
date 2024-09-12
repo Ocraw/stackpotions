@@ -1,0 +1,2 @@
+#How many potions for a single stack
+stackpotions_count (Number of stackable potions) int 9 1 65535
