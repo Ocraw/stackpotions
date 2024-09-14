@@ -12,37 +12,6 @@ stackpotions.stands_node_names = {
   "mcl_brewing:stand_011",
   "mcl_brewing:stand_111",
 }
---[[
-	allow_metadata_inventory_put = allow_put,
-	allow_metadata_inventory_move = allow_move,
-	on_metadata_inventory_put = on_put,
-	on_metadata_inventory_take = start_stand_if_not_empty,
-	_on_hopper_in = hopper_in,
-	_on_hopper_out = hopper_out,
-
-	--------------------------------
-	minetest.explode_table_event(string)
-	minetest.explode_textlist_event(string)
-]]
---[[ Doesn't seem to return a formname
-minetest.register_on_player_receive_fields(function(player, formname, fields)
-	minetest.log(""..formname)
-		return true
-	
---	if fields.quit then
---		return true
---	end
---	local name = player:get_player_name()
---	if fields.awards then
---		local event = minetest.explode_textlist_event(fields.awards)
---		if event.type == "CHG" then
---			awards.show_to(name, name, event.index, false)
---		end
---	end
-
-	return true
-end)
-]]
 
 local function brewable(inv)
 
@@ -94,7 +63,6 @@ local function take_fuel (pos, meta, inv)
 	return 0
 	end
 end
-
 
 local function brewing_stand_timer(pos, elapsed)
 	-- Inizialize metadata
@@ -188,6 +156,7 @@ local function sort_stack(stack)
 	if minetest.get_item_group(stack:get_name(), "brewing_ingredient" ) > 0 then
 		return "input"
 	end
+	-- Removed glass bottle as it doesn't seem to be used in the stand
 	for _, g in pairs({"potion", "splash_potion", "ling_potion", "water_bottle"}) do
 		if minetest.get_item_group(stack:get_name(), g ) > 0 then
 			return "stand"
@@ -205,6 +174,7 @@ function stackpotions.allow_put(pos, listname, stack_id, stack, player)
 	local trg = sort_stack(stack)
 	local trg_stack = inv:get_stack("stand", stack_id)
 	if listname == "stand" then
+	  -- If any item is already in stand list[id], no allowed put there
 		--if trg ~= "stand" or ((trg_stack:get_count() > 0) and (trg_stack:get_meta() == stack:get_meta())) then
 		if trg ~= "stand" or (trg_stack:get_count() > 0) then
 			return 0
@@ -216,6 +186,8 @@ function stackpotions.allow_put(pos, listname, stack_id, stack, player)
 		if trg then
 		    if trg == "stand" then
 		      local r = 0
+		      -- Iterate stand list to get the number of allowed potions
+		      -- based on how many are already in
 		      for i=1,inv:get_size("stand") do
 		        local trg_stack = inv:get_stack("stand", i)
 		        --if not ((trg_stack:get_count() > 0) and (trg_stack:get_meta() == stack:get_meta())) then
@@ -223,6 +195,7 @@ function stackpotions.allow_put(pos, listname, stack_id, stack, player)
 		          r = r + 1
 		        end
 		      end
+		      -- Returning calculated allowed
 		      return r
 		    end
 
@@ -256,16 +229,15 @@ end
 function stackpotions.on_put(pos, listname, stack_id, stack, player)
 	local meta = minetest.get_meta (pos)
 	local inv = meta:get_inventory ()
-	local s_in = 0
-	local s_flag = 0
+	local s_flag_in
 
 	if listname == "sorter" then
 		listname = sort_stack (stack)
 		if not (listname == "stand") then
 		  inv:add_item(listname, stack)
 		else
-		  s_flag = 1
-		  s_in = inv:get_stack("sorter", 1):get_count()
+		  -- Set the number of potions just inserted in the sorter
+		  s_flag_in = inv:get_stack("sorter", 1):get_count()
 	    end
 		inv:set_stack("sorter", 1, ItemStack(""))
 	end
@@ -283,8 +255,10 @@ function stackpotions.on_put(pos, listname, stack_id, stack, player)
 	  local new_stack = ItemStack(stack)
 	  new_stack:set_count(1)
 	  local r=0
-	  if s_flag == 1 then
-	    for _=1, s_in do
+	  if s_flag_in then
+	    -- Iterate for how many potions were inserted
+	    for _=1, s_flag_in do
+	      -- Iterate stand slots and set potion only if not already in.
 	      for i=1, inv:get_size(listname) do
 	        local trg_stack = inv:get_stack(listname, i)
 	        --if not ((trg_stack:get_count() > 0) and (trg_stack:get_meta() == stack:get_meta())) then
@@ -306,11 +280,12 @@ function stackpotions.allow_move(pos, from_list, from_index, to_list, to_index, 
 	local inv = minetest.get_meta(pos):get_inventory()
 	local stack = inv:get_stack(from_list, from_index)
 	local trg = sort_stack(stack)
+	-- Work around double-clicking potions inside stand somehow letting
+	-- them stack, we just not allow moving in stand list.
 	if trg == "stand" then return 0 end
 	if trg == to_list then return count end
 	return 0
 end
-
 
 function stackpotions.hopper_in(pos, to_pos)
 	local sinv = minetest.get_inventory({type="node", pos = pos})
@@ -330,14 +305,13 @@ function stackpotions.hopper_in(pos, to_pos)
 			  local stack = sinv:get_stack("main", slot_id)
 			  local new_stack = ItemStack(stack)
 			  for i=1, dinv:get_size("stand") do
+			    -- Iterate and take/set only if not already in.
 			    if not (dinv:get_stack("stand", i):get_count() > 0) then
 			      new_stack:set_count(1)
 			      dinv:set_stack("stand", i, new_stack)
 			      stack:take_item()
 			      sinv:set_stack("main", slot_id, stack)
-				  --mcl_util.move_item(sinv, "main", slot_id, dinv, "stand")
 				  start_stand_if_not_empty(to_pos)
-				  --minetest.get_node_timer(to_pos):start(1.0)
 				  break
 			    end
 			  end
@@ -367,15 +341,6 @@ function stackpotions.hopper_out(pos, to_pos)
 	return true
 end
 
---[[
-	allow_metadata_inventory_put = allow_put,
-	allow_metadata_inventory_move = allow_move,
-	on_metadata_inventory_put = on_put,
-	on_metadata_inventory_take = start_stand_if_not_empty,
-	_on_hopper_in = hopper_in,
-	_on_hopper_out = hopper_out,
-]]
-
 minetest.register_on_mods_loaded(function()
   -- Override stands
   for _,s in pairs(stackpotions.stands_node_names) do
@@ -400,3 +365,4 @@ minetest.register_on_mods_loaded(function()
   end
   minetest.log("action", "Stackpotions: overridden "..i.." potions to stack in " ..stackpotions.stack_n)
 end)
+
