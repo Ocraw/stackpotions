@@ -89,7 +89,7 @@ function stackpotions.allow_put(pos, listname, stack_id, stack, player)
 	local trg = sort_stack(stack)
 	local trg_stack = inv:get_stack("stand", stack_id)
 	if listname == "stand" then
-		-- If any item is already in stand list[id], no allowed put there
+		-- If any item is already in "stand" list[id], no allowed put there
 		if trg ~= "stand" or (not trg_stack:is_empty()) then
 			return 0
 		end
@@ -196,10 +196,16 @@ function stackpotions.allow_move(pos, from_list, from_index, to_list, to_index, 
 	local inv = minetest.get_meta(pos):get_inventory()
 	local stack = inv:get_stack(from_list, from_index)
 	local trg = sort_stack(stack)
+	--FIXME: moving around stuff needs work
 	-- Work around double-clicking potions inside stand somehow letting
-	-- them stack, we just not allow moving in stand list.
-	if trg == "stand" then return 0 end
-	if trg == to_list then return count end
+	-- them stack, we just not allow moving in stand list if not empty.
+	if trg == "stand" then
+	  if inv:get_stack(to_list, to_index):is_empty() then
+	    return 1
+	  end
+	  return 0
+	end
+	if trg == to_list or ((stack:get_name() == "mcl_mobitems:blaze_powder") and not (to_list == "stand")) then return count end
 	return 0
 end
 
@@ -222,7 +228,6 @@ function stackpotions.hopper_in(pos, to_pos)
 				local new_stack = ItemStack(stack)
 				for i=1, dinv:get_size("stand") do
 					-- Iterate and take/set only if not already in.
-					--if not (dinv:get_stack("stand", i):get_count() > 0) then
 					if dinv:get_stack("stand", i):is_empty() then
 						new_stack:set_count(1)
 						dinv:set_stack("stand", i, new_stack)
@@ -253,22 +258,23 @@ function stackpotions.hopper_out(pos, to_pos)
 	local slot_id,_ = mcl_util.get_eligible_transfer_item_slot(sinv, "stand", dinv, "main", nil)
 	if slot_id then
 		mcl_util.move_item(sinv, "stand", slot_id, dinv, "main")
+		-- Call brewing stand update
+		stackpotions.start_stand_if_not_empty(pos)
 	end
-	stackpotions.start_stand_if_not_empty(pos)
 	return true
 end
 
 minetest.register_on_mods_loaded(function()
 	-- Override stands
 	for _,stand_name in pairs(stackpotions.stands_node_names) do
-		minetest.override_item(stand_name, {
-		allow_metadata_inventory_put = stackpotions.allow_put,
-		allow_metadata_inventory_move = stackpotions.allow_move,
-		on_metadata_inventory_put = stackpotions.on_put,
-		on_metadata_inventory_take = stackpotions.start_stand_if_not_empty,
-		_on_hopper_in = stackpotions.hopper_in,
-		_on_hopper_out = stackpotions.hopper_out,
-		})
+			minetest.override_item(stand_name, {
+				allow_metadata_inventory_put = stackpotions.allow_put,
+				allow_metadata_inventory_move = stackpotions.allow_move,
+				on_metadata_inventory_put = stackpotions.on_put,
+				on_metadata_inventory_take = stackpotions.start_stand_if_not_empty,
+				_on_hopper_in = stackpotions.hopper_in,
+				_on_hopper_out = stackpotions.hopper_out,
+			})
 	end
 	-- Override potions
 	local i=0
